@@ -155,7 +155,7 @@ export default function App() {
   const [selectedPlatforms, setSelectedPlatforms] = useState(['youtube'])
   const [videos, setVideos] = useState([])
   const [selectedVideo, setSelectedVideo] = useState(null)
-  const [userBrief, setUserBrief] = useState({ niche: '', tone: '', audience: '' })
+  const [userBrief, setUserBrief] = useState({ niche: '', tone: '', audience: '', estilo: '' })
   const [processingStep, setProcessingStep] = useState(0)
   const [result, setResult] = useState(null)
   const [editedScript, setEditedScript] = useState('')
@@ -201,7 +201,7 @@ export default function App() {
   // Analyze
   async function handleAnalyze(e) {
     e.preventDefault()
-    if (!userBrief.niche || !userBrief.tone || !userBrief.audience) return
+    if (!userBrief.niche || !userBrief.tone || !userBrief.audience || !userBrief.estilo) return
     setScreen('processing')
     setProcessingStep(0)
     setError('')
@@ -470,6 +470,20 @@ export default function App() {
                   value={userBrief.tone}
                   onChange={e => setUserBrief(p => ({...p, tone: e.target.value}))}
                   placeholder="ej: casual y directo, sin rodeos"
+                  className="w-full bg-card border border-border rounded-xl px-4 py-3 text-bright font-body placeholder:text-muted focus:border-accent transition-colors"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-mono text-muted uppercase tracking-wider mb-2">
+                  ¿Cómo hablás vos?
+                </label>
+                <input
+                  type="text"
+                  value={userBrief.estilo}
+                  onChange={e => setUserBrief(p => ({...p, estilo: e.target.value}))}
+                  placeholder="ej: argentino coloquial, como hablando con un amigo en un bar"
                   className="w-full bg-card border border-border rounded-xl px-4 py-3 text-bright font-body placeholder:text-muted focus:border-accent transition-colors"
                   required
                 />
