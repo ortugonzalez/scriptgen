@@ -4,27 +4,34 @@ import axios from "axios";
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const APIFY_TOKEN = process.env.APIFY_API_TOKEN;
 
+function normalizeYouTubeUrl(url) {
+  const match = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([^&\n?#]+)/);
+  return match ? "https://www.youtube.com/watch?v=" + match[1] : url;
+}
+
 async function getTranscript(videoUrl, platform, videoMeta) {
   console.log("Obteniendo transcripcion para: " + videoUrl + " [" + platform + "]");
 
   if (platform === "youtube") {
+    const normalizedUrl = normalizeYouTubeUrl(videoUrl);
+    console.log("URL normalizada:", normalizedUrl);
     try {
       const res = await axios.post(
         "https://api.apify.com/v2/acts/trisecode~yt-transcript/run-sync-get-dataset-items?token=" + APIFY_TOKEN,
-        { videoUrl: videoUrl },
+        { videoUrl: normalizedUrl },
         { timeout: 60000 }
       );
       const data = res.data?.[0];
       console.log("Apify yt-transcript keys:", data ? Object.keys(data) : "empty");
-      if (data?.transcript) return typeof data.transcript === "string" ? data.transcript : JSON.stringify(data.transcript);
-      if (data?.text) return data.text;
-      if (data?.description) return "Titulo: " + (data.title || "") + "\n\n" + data.description;
-      if (Array.isArray(data?.captions)) return data.captions.map(c => c.text).join(" ");
+      if (data?.transcript && typeof data.transcript === "string" && data.transcript.length > 50) return data.transcript;
+      if (Array.isArray(data?.transcript)) return data.transcript.map(t => t.text || t).join(" ");
+      if (data?.captions && Array.isArray(data.captions)) return data.captions.map(c => c.text).join(" ");
+      if (data?.text && data.text.length > 50) return data.text;
     } catch (e) {
       console.log("trisecode actor fallo:", e.message);
     }
     if (process.env.YOUTUBE_API_KEY) {
-      const ytMatch = videoUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([^&\n?#]+)/);
+      const ytMatch = normalizeYouTubeUrl(videoUrl).match(/watch\?v=([^&]+)/);
       if (ytMatch) {
         const ytRes = await axios.get("https://www.googleapis.com/youtube/v3/videos", {
           params: { part: "snippet", id: ytMatch[1], key: process.env.YOUTUBE_API_KEY }
@@ -38,10 +45,8 @@ async function getTranscript(videoUrl, platform, videoMeta) {
 
   if (platform === "tiktok" || platform === "instagram") {
     const caption = videoMeta?.description || videoMeta?.title || "";
-    if (caption.length > 20) {
-      return "Caption del video: " + caption;
-    }
-    throw new Error("Este video no tiene suficiente texto para generar un guion. Proba con un video de YouTube.");
+    if (caption.length > 20) return "Caption del video: " + caption;
+    throw new Error("Este video no tiene suficiente texto. Proba con un video de YouTube.");
   }
 
   throw new Error("Plataforma no soportada: " + platform);
@@ -65,10 +70,10 @@ async function generateScript(transcription, ideas, videoMeta, userBrief) {
   const completion = await groq.chat.completions.create({
     model: "llama-3.3-70b-versatile",
     messages: [
-      { role: "system", content: "Sos un experto en contenido para redes sociales. Escribi un guion nuevo inspirado en un video viral.\nReglas: tono casual, 30-90 segundos, hook en las primeras 3 palabras, termina con pregunta.\nFormato:\n[HOOK]\n...\n[DESARROLLO]\n...\n[CIERRE + PREGUNTA]\n..." },
-      { role: "user", content: "VIDEO:\nTitulo: " + videoMeta.title + "\nPor que viral: " + (ideas.por_que_viral||"No detectado") + "\nIdeas: " + (ideas.ideas_clave?.join(", ")||"No detectadas") + "\n\nCONTENIDO:\n" + transcription + "\n\nMI CANAL:\nNicho: " + userBrief.niche + "\nTono: " + userBrief.tone + "\nAudiencia: " + userBrief.audience }
+      { role: "system", content: "Sos un creador de contenido argentino experto en redes sociales. Tu trabajo es escribir guiones cortos, directos y con mucha personalidad rioplatense.\n\nReglas ESTRICTAS:\n- Habla en argentino: che, boludo, re, posta, dale, ni en pedo, etc.\n- Tono crudo y honesto, como si lo dijera un amigo en un bar\n- Hook impactante en las primeras 3-5 palabras que pare el scroll\n- Desarrollo que conecte emocionalmente con la audiencia\n- Sin palabras rebuscadas, sin sonar a IA, sin ser formal\n- Video corto: maximo 60-90 segundos\n- Termina SIEMPRE con una pregunta personal y directa al espectador\n\nFormato de salida:\n[HOOK]\n...\n\n[DESARROLLO]\n...\n\n[CIERRE + PREGUNTA]\n..." },
+      { role: "user", content: "VIDEO VIRAL ANALIZADO:\nTitulo: " + videoMeta.title + "\nPor que funciono: " + (ideas.por_que_viral||"engagement emocional") + "\nIdeas clave: " + (ideas.ideas_clave?.join(", ")||"No detectadas") + "\n\nCONTENIDO ORIGINAL:\n" + transcription + "\n\nMI CANAL:\nNicho: " + userBrief.niche + "\nTono: " + userBrief.tone + "\nAudiencia: " + userBrief.audience + "\n\nEscribi un guion NUEVO inspirado en este video pero con tu voz argentina. NO copies, RE-INTERPRETALO para mi audiencia." }
     ],
-    temperature: 0.7
+    temperature: 0.8
   });
   return completion.choices[0].message.content;
 }
@@ -77,10 +82,10 @@ async function regenerateScript(currentScript, instructions, userBrief) {
   const completion = await groq.chat.completions.create({
     model: "llama-3.3-70b-versatile",
     messages: [
-      { role: "system", content: "Editor de contenido. Aplica los cambios manteniendo el estilo del creador." },
-      { role: "user", content: "GUION:\n" + currentScript + "\n\nCAMBIOS:\n" + instructions + "\n\nCANAL:\nNicho: " + userBrief.niche + "\nTono: " + userBrief.tone + "\nAudiencia: " + userBrief.audience }
+      { role: "system", content: "Sos un editor de contenido argentino. Aplica los cambios pedidos manteniendo el tono rioplatense y el estilo del creador. Sin formalismos, sin sonar a IA." },
+      { role: "user", content: "GUION ACTUAL:\n" + currentScript + "\n\nCAMBIOS PEDIDOS:\n" + instructions + "\n\nMI CANAL:\nNicho: " + userBrief.niche + "\nTono: " + userBrief.tone + "\nAudiencia: " + userBrief.audience + "\n\nReescribi el guion aplicando los cambios." }
     ],
-    temperature: 0.7
+    temperature: 0.8
   });
   return completion.choices[0].message.content;
 }
