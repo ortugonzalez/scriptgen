@@ -18,7 +18,7 @@ async function downloadAudio(videoUrl) {
   try {
     // Try yt-dlp first (handles YouTube, TikTok, Instagram)
     await execAsync(
-      `yt-dlp -x --audio-format mp3 --audio-quality 0 -o "${outputPath}" "${videoUrl}"`,
+  `/usr/local/bin/yt-dlp -x --audio-format mp3 --audio-quality 0 -o "${outputPath}" "${videoUrl}"`,
       { timeout: 120000 }
     );
     return outputPath;
